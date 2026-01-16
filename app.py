@@ -121,18 +121,28 @@ class GoogleSheetManager:
         return [c for c in all_cards if str(c['user_id']) == str(user_id)]
 
 # ==========================================
-# [UI] 스타일 (CSS 오류 해결 버전)
+# [UI] 스타일 (CSS 오류 수정됨)
 # ==========================================
 def apply_game_style():
-    # [수정] unsafe_allow_html=True가 반드시 있어야 스타일이 적용됨
+    # [수정] 아래 <style> 태그가 반드시 포함되어야 합니다.
     st.markdown("""
-        <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
         <style>
-        .stApp { background: linear-gradient(to bottom, #1a1a2e, #16213e, #0f3460); color: #ffffff; font-family: 'Jua', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        
+        /* 전체 폰트 적용 */
+        html, body, [class*="css"] {
+            font-family: 'Jua', sans-serif;
+        }
+
+        .stApp { 
+            background: linear-gradient(to bottom, #1a1a2e, #16213e, #0f3460); 
+            color: #ffffff; 
+        }
+        
         .main-avatar-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px 0; }
         .avatar-emoji { font-size: 80px; animation: float 3s ease-in-out infinite; }
         .user-info-box { background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; border: 2px solid #FFD700; margin-top: 10px; }
-        .stButton > button { width: 100%; height: 50px; border-radius: 10px; font-family: 'Jua'; font-size: 1.1rem; }
+        .stButton > button { width: 100%; height: 50px; border-radius: 10px; font-size: 1.1rem; }
         
         /* 카드 디자인 */
         div[data-testid="stVerticalBlockBorderWrapper"] {
@@ -142,24 +152,20 @@ def apply_game_style():
             padding: 20px !important;
         }
         
-        /* 텍스트 강제 갈색 */
+        /* 텍스트 색상 */
         div[data-testid="stVerticalBlockBorderWrapper"] * {
             color: #3d2b07 !important;
-            font-family: 'Jua', sans-serif !important;
-        }
-
-        /* 빈칸 표시 스타일 */
-        .blank-number {
-            color: #d9534f;
-            font-weight: bold;
-            font-size: 1.2rem;
-            background-color: rgba(0,0,0,0.1);
-            padding: 0 5px;
-            border-radius: 5px;
         }
         
-        /* 입력창 라벨 색상 */
+        /* 입력창 라벨 */
         .stTextInput label { color: #3d2b07 !important; }
+        
+        /* 본문 텍스트 스타일 */
+        .quest-text {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 5px;
+        }
 
         @keyframes float { 
             0%, 100% { transform: translateY(0); } 
@@ -255,7 +261,7 @@ elif 'page' not in st.session_state or st.session_state.page == 'main':
     with col2:
         if st.button("📖 나의 도감"): st.session_state.page = 'collection'; st.rerun()
 
-# 화면 3: 퀘스트 던전 (일체형 디자인)
+# 화면 3: 퀘스트 던전 (모바일 최적화: 텍스트-입력 교차 배치)
 elif st.session_state.page == 'dungeon':
     if st.button("🏠 로비로"): 
         st.session_state.page = 'main'
@@ -316,51 +322,46 @@ elif st.session_state.page == 'dungeon':
             elif "어려움" in diff: k = max(1, int(len(unique_nouns) * 0.5)); target_nouns = random.sample(unique_nouns, k)
             else: target_nouns = unique_nouns
 
+            # 순서 정렬
             matches = []
             for t in target_nouns:
                 for m in re.finditer(re.escape(t), curr_sent):
                     matches.append((m.start(), m.group()))
-            
             matches.sort(key=lambda x: x[0])
-            temp_sent_list = list(curr_sent)
-            matches.reverse()
-            processed_indices = set()
-            blank_counter = len(matches)
-            real_targets_ordered = []
-
-            for idx, word in matches:
-                if idx in processed_indices: continue
-                # [디자인] 빈칸을 더 눈에 띄게 (빨간 번호표)
-                blank_html = f'<span class="blank-number">({blank_counter})</span> ______ '
-                temp_sent_list[idx : idx + len(word)] = list(blank_html)
-                real_targets_ordered.append(word)
-                blank_counter -= 1
             
-            q_html = "".join(temp_sent_list)
-            real_targets_ordered.reverse()
-
+            # matches 순서대로 정렬된 정답 리스트 저장
             st.session_state.curr_sent = curr_sent
-            st.session_state.curr_targets = real_targets_ordered
-            st.session_state.curr_html = q_html
+            st.session_state.curr_matches = matches
+            st.session_state.curr_targets = [m[1] for m in matches]
             st.session_state.curr_ans = "ACTIVE"
 
-        # [디자인] 카드 일체형 컨테이너
+        # [디자인] 카드 컨테이너
         with st.container(border=True): 
-            st.markdown(st.session_state.curr_html, unsafe_allow_html=True)
-            st.write("") # 간격 조절
-            
-            # 입력폼 시작
             with st.form("btl", clear_on_submit=False):
-                # [디자인] 입력창을 3열로 촘촘하게 배치 (본문과 가까워 보이게)
-                cols = st.columns(3)
+                st.write("📝 **빈칸 채우기**")
+                
+                # [모바일 최적화 로직] 텍스트와 입력을 번갈아 배치 (Interleaved)
                 user_inputs = []
+                last_idx = 0
+                full_text = st.session_state.curr_sent
                 
-                for i in range(len(st.session_state.curr_targets)):
-                    with cols[i % 3]:
-                        val = st.text_input(f"({i+1}) 정답", key=f"ans_{st.session_state.q_idx}_{i}")
-                        user_inputs.append(val)
+                for i, (start, word) in enumerate(st.session_state.curr_matches):
+                    # 1. 빈칸 앞부분 텍스트 출력
+                    pre_text = full_text[last_idx:start]
+                    if pre_text.strip():
+                        st.markdown(f'<div class="quest-text">{pre_text}</div>', unsafe_allow_html=True)
+                    
+                    # 2. 입력창 바로 배치 (다음 줄)
+                    val = st.text_input(f"빈칸 ({i+1}) 정답 입력", key=f"ans_{st.session_state.q_idx}_{i}")
+                    user_inputs.append(val)
+                    
+                    last_idx = start + len(word)
                 
-                # 버튼을 오른쪽으로 정렬하지 않고 꽉 차게
+                # 3. 남은 뒷부분 텍스트 출력
+                if last_idx < len(full_text):
+                    st.markdown(f'<div class="quest-text">{full_text[last_idx:]}</div>', unsafe_allow_html=True)
+
+                st.write("")
                 sub = st.form_submit_button("🔥 정답 확인")
                 
                 if sub:
