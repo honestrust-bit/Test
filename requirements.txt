@@ -3,3 +3,4 @@ kiwipiepy
 pandas
 gspread
 oauth2client
+extra-streamlit-components
