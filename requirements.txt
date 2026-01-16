@@ -1,0 +1,5 @@
+streamlit
+kiwipiepy
+pandas
+gspread
+oauth2client
