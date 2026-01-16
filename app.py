@@ -6,25 +6,28 @@ from oauth2client.service_account import ServiceAccountCredentials
 from kiwipiepy import Kiwi
 
 # ==========================================
-# [Backend] 구글 시트 연동 관리자
+# [Backend] 구글 시트 연동 관리자 (최신 주소 적용)
 # ==========================================
 class GoogleSheetManager:
     def __init__(self):
         try:
-            # Secrets에서 키 가져오기
-            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-            # secrets에 json 내용을 통째로 넣었을 경우를 대비한 처리
+            # 1. 최신 Scope 주소로 업데이트 (200 에러 방지)
+            scope = [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            
+            # 2. Secrets에서 키 가져오기
             if "gcp_service_account" in st.secrets:
                 creds_dict = dict(st.secrets["gcp_service_account"])
             else:
-                # 만약 toml 형식이 아니라면 에러가 날 수 있음
                 st.error("Secrets 설정 오류: [gcp_service_account] 섹션을 찾을 수 없습니다.")
                 st.stop()
                 
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             self.client = gspread.authorize(creds)
             
-            # 시트 연결 (시트 이름이 'memory_game_db'여야 함)
+            # 3. 시트 연결 (이름 확인 필수!)
             self.sheet = self.client.open("memory_game_db")
             
             try: self.users_ws = self.sheet.worksheet("users")
@@ -34,7 +37,7 @@ class GoogleSheetManager:
             except: self.collections_ws = self.sheet.add_worksheet("collections", 100, 10); self.collections_ws.append_row(["user_id", "card_text", "grade", "collected_at"])
             
         except Exception as e:
-            st.error(f"구글 연결 실패! (시트 이름이 'memory_game_db' 인가요? 공유는 하셨나요?) 에러: {e}")
+            st.error(f"⚠️ 구글 시트 연결 실패! \n원인: {e}\n(해결책: 시트 이름이 'memory_game_db'인지, game-bot 이메일에 '편집자' 공유를 했는지 확인하세요.)")
             st.stop()
 
     def login(self, user_id, password):
@@ -52,11 +55,13 @@ class GoogleSheetManager:
         return True
 
     def process_reward(self, user_id, card_text, current_level, current_xp, row_idx):
+        # 가챠 확률
         rand = random.random()
         if rand < 0.05: grade = "LEGEND"
         elif rand < 0.20: grade = "RARE"
         else: grade = "NORMAL"
         
+        # 경험치 계산
         xp_gain = 50 if grade == "LEGEND" else 30 if grade == "RARE" else 10
         new_xp = current_xp + xp_gain
         new_level = current_level
@@ -68,6 +73,7 @@ class GoogleSheetManager:
             new_xp -= req_xp
             is_levelup = True
             
+        # 구글 시트 업데이트
         self.users_ws.update_cell(row_idx, 3, new_level)
         self.users_ws.update_cell(row_idx, 4, new_xp)
         self.collections_ws.append_row([user_id, card_text, grade, str(time.strftime('%Y-%m-%d'))])
@@ -76,10 +82,12 @@ class GoogleSheetManager:
 
     def get_collections(self, user_id):
         all_cards = self.collections_ws.get_all_records()
-        return [c for c in all_cards if str(c['user_id']) == str(user_id)]
+        # 내 카드만 필터링하고 최신순으로 뒤집기
+        my_cards = [c for c in all_cards if str(c['user_id']) == str(user_id)]
+        return my_cards[::-1]
 
 # ==========================================
-# [UI/UX] 게임 스타일 (귀여운 버전)
+# [UI/UX] 게임 스타일 (귀여운 테마)
 # ==========================================
 def apply_game_style():
     st.markdown("""
@@ -108,7 +116,7 @@ def apply_game_style():
     """, unsafe_allow_html=True)
 
 # ==========================================
-# [Main] 앱 실행
+# [Main] 앱 실행 로직
 # ==========================================
 st.set_page_config(page_title="메모리 가디언즈", page_icon="🛡️", layout="centered")
 apply_game_style()
@@ -116,9 +124,10 @@ apply_game_style()
 @st.cache_resource
 def load_kiwi(): return Kiwi()
 
-# DB 연결 (실패 시 에러 메시지 출력됨)
+# DB 연결
 gm = GoogleSheetManager()
 
+# 세션 초기화
 if 'user_id' not in st.session_state:
     st.session_state.user_id = None
     st.session_state.user_row_idx = None
@@ -126,7 +135,7 @@ if 'user_id' not in st.session_state:
     st.session_state.xp = 0
     if 'page' not in st.session_state: st.session_state.page = 'main'
 
-# 화면 1: 로그인
+# 1. 로그인 화면
 if st.session_state.user_id is None:
     st.title("🛡️ 메모리 가디언즈")
     st.caption("Google Sheets Online Ver.")
@@ -142,15 +151,15 @@ if st.session_state.user_id is None:
                 st.session_state.level = user_data['level']
                 st.session_state.xp = user_data['xp']
                 st.rerun()
-            else: st.error("정보 불일치")
+            else: st.error("아이디 또는 비밀번호가 틀렸습니다.")
     with tab2:
         rid = st.text_input("새 아이디")
         rpw = st.text_input("새 비밀번호", type="password")
         if st.button("가입하기"):
-            if gm.register(rid, rpw): st.success("가입 완료! 로그인하세요.")
-            else: st.error("이미 존재하는 아이디")
+            if gm.register(rid, rpw): st.success("가입 완료! 로그인 탭에서 로그인하세요.")
+            else: st.error("이미 존재하는 아이디입니다.")
 
-# 화면 2: 로비
+# 2. 로비 화면
 elif st.session_state.page == 'main':
     u_id, lv, xp = st.session_state.user_id, st.session_state.level, st.session_state.xp
     req_xp = lv * 100
@@ -179,7 +188,7 @@ elif st.session_state.page == 'main':
     with col2:
         if st.button("📖 내 도감"): st.session_state.page = 'collection'; st.rerun()
 
-# 화면 3: 던전
+# 3. 던전 화면 (버그 수정 완료: 정답 고정)
 elif st.session_state.page == 'dungeon':
     if st.button("🏠 로비로"): st.session_state.page = 'main'; st.rerun()
     st.header("💀 지식의 던전")
@@ -188,45 +197,70 @@ elif st.session_state.page == 'dungeon':
     if uploaded:
         txt = uploaded.getvalue().decode('utf-8')
         kiwi = load_kiwi()
+        
+        # 파일이 처음 로드되거나, 사용자가 리셋을 원할 때
         if 'sents' not in st.session_state or st.button("🔄 새 던전 생성"):
              st.session_state.sents = [s.text for s in kiwi.split_into_sents(txt) if len(s.text)>5]
              st.session_state.q_idx = 0
+             if 'curr_ans' in st.session_state: del st.session_state.curr_ans # 기존 문제 삭제
         
         if st.session_state.sents:
-            curr = st.session_state.sents[st.session_state.q_idx % len(st.session_state.sents)]
-            tokens = kiwi.tokenize(curr)
-            nouns = [t.form for t in tokens if t.tag.startswith('N') and len(t.form)>1]
+            # [중요] 이미 출제된 문제(curr_ans)가 없으면 새로 만든다
+            if 'curr_ans' not in st.session_state:
+                curr_sent = st.session_state.sents[st.session_state.q_idx % len(st.session_state.sents)]
+                tokens = kiwi.tokenize(curr_sent)
+                nouns = [t.form for t in tokens if t.tag.startswith('N') and len(t.form)>1]
+                
+                if not nouns: # 명사 없으면 스킵
+                    st.session_state.q_idx += 1
+                    st.rerun()
+                
+                target_word = random.choice(nouns)
+                
+                # 세션에 문제 박제 (새로고침 방지)
+                st.session_state.curr_sent = curr_sent
+                st.session_state.curr_ans = target_word
+                st.session_state.curr_html = curr_sent.replace(target_word, '<span class="blank-space"></span>')
             
-            if nouns:
-                ans = random.choice(nouns)
-                q_html = curr.replace(ans, '<span class="blank-space"></span>')
+            # 저장된 문제 표시
+            st.markdown(f"""<div class="quiz-card">{st.session_state.curr_html}</div>""", unsafe_allow_html=True)
+            
+            with st.form("btl"):
+                col_i, col_b = st.columns([3, 1])
+                with col_i: inp = st.text_input("정답", placeholder="빈칸 단어", label_visibility="collapsed")
+                with col_b: sub = st.form_submit_button("🔥 공격")
                 
-                st.markdown(f"""<div class="quiz-card">{q_html}</div>""", unsafe_allow_html=True)
-                
-                with st.form("btl"):
-                    col_i, col_b = st.columns([3, 1])
-                    with col_i: inp = st.text_input("정답", placeholder="빈칸 단어", label_visibility="collapsed")
-                    with col_b: sub = st.form_submit_button("🔥 공격")
-                    
-                    if sub:
-                        if ans in inp:
-                            g, up, gain, nl, nx = gm.process_reward(st.session_state.user_id, curr, st.session_state.level, st.session_state.xp, st.session_state.user_row_idx)
-                            st.session_state.level = nl
-                            st.session_state.xp = nx
-                            
-                            if g=="LEGEND": st.balloons(); st.success(f"👑 전설! (+{gain})")
-                            elif g=="RARE": st.success(f"✨ 희귀! (+{gain})")
-                            else: st.info(f"🛡️ 일반. (+{gain})")
-                            time.sleep(1); st.session_state.q_idx += 1; st.rerun()
-                        else: st.error(f"💥 땡! 정답: {ans}")
-            else: st.session_state.q_idx += 1; st.rerun()
+                if sub:
+                    # 저장된 정답과 비교
+                    if st.session_state.curr_ans in inp:
+                        g, up, gain, nl, nx = gm.process_reward(
+                            st.session_state.user_id, 
+                            st.session_state.curr_sent, 
+                            st.session_state.level, 
+                            st.session_state.xp, 
+                            st.session_state.user_row_idx
+                        )
+                        st.session_state.level = nl
+                        st.session_state.xp = nx
+                        
+                        if g=="LEGEND": st.balloons(); st.success(f"👑 전설! (+{gain}XP)")
+                        elif g=="RARE": st.success(f"✨ 희귀! (+{gain}XP)")
+                        else: st.info(f"🛡️ 일반. (+{gain}XP)")
+                        
+                        time.sleep(1)
+                        # 맞췄으니까 저장된 문제 삭제 (다음 문제 출제 트리거)
+                        del st.session_state.curr_ans
+                        st.session_state.q_idx += 1
+                        st.rerun()
+                    else:
+                        st.error(f"💥 공격 실패! 정답은 '{st.session_state.curr_ans}' 였습니다!")
 
-# 화면 4: 도감
+# 4. 도감 화면
 elif st.session_state.page == 'collection':
     if st.button("🏠 로비로"): st.session_state.page = 'main'; st.rerun()
     st.header("📖 수집 도감")
     cards = gm.get_collections(st.session_state.user_id)
-    if not cards: st.info("수집 내역이 없습니다.")
+    if not cards: st.info("아직 수집한 카드가 없습니다.")
     else:
         for c in cards:
             g = c['grade']
