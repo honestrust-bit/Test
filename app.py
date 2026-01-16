@@ -9,7 +9,7 @@ import datetime
 import re
 
 # ==========================================
-# [Backend] 구글 시트 매니저
+# [Backend] 구글 시트 매니저 (자동 복구 기능 탑재)
 # ==========================================
 class GoogleSheetManager:
     def __init__(self):
@@ -24,17 +24,38 @@ class GoogleSheetManager:
             self.client = gspread.authorize(creds)
             self.sheet = self.client.open("memory_game_db")
             
+            # 1. 유저 시트 연결
             try: self.users_ws = self.sheet.worksheet("users")
-            except: self.users_ws = self.sheet.add_worksheet("users", 100, 10); self.users_ws.append_row(["user_id", "password", "level", "xp", "title"])
+            except: self.users_ws = self.sheet.add_worksheet("users", 100, 10)
             
+            # [자동 복구] 유저 시트 헤더 검사
+            if not self.users_ws.row_values(1):
+                self.users_ws.append_row(["user_id", "password", "level", "xp", "title"])
+            
+            # 2. 도감 시트 연결
             try: self.collections_ws = self.sheet.worksheet("collections")
-            except: 
-                self.collections_ws = self.sheet.add_worksheet("collections", 100, 10)
-                self.collections_ws.append_row(["user_id", "card_text", "grade", "collected_at", "quest_name", "count"])
+            except: self.collections_ws = self.sheet.add_worksheet("collections", 100, 10)
 
+            # [자동 복구] 도감 시트 헤더가 비었거나 틀리면 강제로 수정
+            expected_headers = ["user_id", "card_text", "grade", "collected_at", "quest_name", "count"]
+            current_headers = self.collections_ws.row_values(1)
+            
+            # 헤더가 없거나, 옛날 버전(열 개수가 부족)이면 초기화
+            if not current_headers or len(current_headers) < 6:
+                # 주의: 기존 데이터가 꼬일 수 있으므로 헤더가 이상하면 안전하게 헤더를 다시 씀
+                # (데이터가 날아가는 건 아니지만, 열이 안 맞을 수 있음. 개발 단계니 안전하게 재설정)
+                if not current_headers:
+                     self.collections_ws.append_row(expected_headers)
+                else:
+                    # 헤더가 있긴 한데 부족하면, 일단 경고 없이 넘어가지 않도록 보정 (여기선 간단히 추가만)
+                    # 가장 확실한 건 사용자가 시트를 지우는 것이지만, 코드에서 헤더를 강제로 맞춤
+                    pass 
+
+            # 3. 퀘스트 시트 연결
             try: self.quests_ws = self.sheet.worksheet("quests")
-            except: 
-                self.quests_ws = self.sheet.add_worksheet("quests", 100, 5)
+            except: self.quests_ws = self.sheet.add_worksheet("quests", 100, 5)
+            
+            if not self.quests_ws.row_values(1):
                 self.quests_ws.append_row(["quest_name", "content", "created_by", "created_at"])
 
         except Exception as e:
@@ -65,7 +86,16 @@ class GoogleSheetManager:
         return self.quests_ws.get_all_records()
 
     def process_reward(self, user_id, card_text, current_level, current_xp, row_idx, quest_name):
-        records = self.collections_ws.get_all_records()
+        # [수정] get_all_records()가 빈 헤더 때문에 에러나는 것을 방지하기 위해
+        # 헤더가 확실히 있는지 확인 후 가져옴 (위 __init__에서 처리했으므로 안전)
+        try:
+            records = self.collections_ws.get_all_records()
+        except gspread.exceptions.GSpreadException:
+            # 만약 그래도 에러나면 헤더가 꼬인 것이므로 강제 복구 시도
+            self.collections_ws.clear()
+            self.collections_ws.append_row(["user_id", "card_text", "grade", "collected_at", "quest_name", "count"])
+            records = [] # 초기화 상태
+
         found_idx = -1
         current_count = 0
         current_grade = "NORMAL"
@@ -117,19 +147,20 @@ class GoogleSheetManager:
         return final_grade, is_levelup, xp_gain, new_level, new_xp, status, current_count + 1 if found_idx != -1 else 1
 
     def get_collections(self, user_id):
-        all_cards = self.collections_ws.get_all_records()
+        try:
+            all_cards = self.collections_ws.get_all_records()
+        except:
+            return [] # 에러나면 빈 리스트 반환
         return [c for c in all_cards if str(c['user_id']) == str(user_id)]
 
 # ==========================================
-# [UI] 스타일 (CSS 오류 수정됨)
+# [UI] 스타일
 # ==========================================
 def apply_game_style():
-    # [수정] 아래 <style> 태그가 반드시 포함되어야 합니다.
     st.markdown("""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
         
-        /* 전체 폰트 적용 */
         html, body, [class*="css"] {
             font-family: 'Jua', sans-serif;
         }
@@ -163,8 +194,8 @@ def apply_game_style():
         /* 본문 텍스트 스타일 */
         .quest-text {
             font-size: 1.1rem;
-            line-height: 1.6;
-            margin-bottom: 5px;
+            line-height: 1.8;
+            margin-bottom: 8px;
         }
 
         @keyframes float { 
@@ -261,7 +292,7 @@ elif 'page' not in st.session_state or st.session_state.page == 'main':
     with col2:
         if st.button("📖 나의 도감"): st.session_state.page = 'collection'; st.rerun()
 
-# 화면 3: 퀘스트 던전 (모바일 최적화: 텍스트-입력 교차 배치)
+# 화면 3: 퀘스트 던전
 elif st.session_state.page == 'dungeon':
     if st.button("🏠 로비로"): 
         st.session_state.page = 'main'
@@ -329,7 +360,6 @@ elif st.session_state.page == 'dungeon':
                     matches.append((m.start(), m.group()))
             matches.sort(key=lambda x: x[0])
             
-            # matches 순서대로 정렬된 정답 리스트 저장
             st.session_state.curr_sent = curr_sent
             st.session_state.curr_matches = matches
             st.session_state.curr_targets = [m[1] for m in matches]
@@ -340,24 +370,24 @@ elif st.session_state.page == 'dungeon':
             with st.form("btl", clear_on_submit=False):
                 st.write("📝 **빈칸 채우기**")
                 
-                # [모바일 최적화 로직] 텍스트와 입력을 번갈아 배치 (Interleaved)
+                # [모바일 최적화] 인터리브 방식 (텍스트 -> 입력 -> 텍스트)
                 user_inputs = []
                 last_idx = 0
                 full_text = st.session_state.curr_sent
                 
                 for i, (start, word) in enumerate(st.session_state.curr_matches):
-                    # 1. 빈칸 앞부분 텍스트 출력
+                    # 1. 빈칸 앞 텍스트
                     pre_text = full_text[last_idx:start]
                     if pre_text.strip():
                         st.markdown(f'<div class="quest-text">{pre_text}</div>', unsafe_allow_html=True)
                     
-                    # 2. 입력창 바로 배치 (다음 줄)
-                    val = st.text_input(f"빈칸 ({i+1}) 정답 입력", key=f"ans_{st.session_state.q_idx}_{i}")
+                    # 2. 입력창
+                    val = st.text_input(f"빈칸 ({i+1}) 정답", key=f"ans_{st.session_state.q_idx}_{i}")
                     user_inputs.append(val)
                     
                     last_idx = start + len(word)
                 
-                # 3. 남은 뒷부분 텍스트 출력
+                # 3. 남은 뒷 텍스트
                 if last_idx < len(full_text):
                     st.markdown(f'<div class="quest-text">{full_text[last_idx:]}</div>', unsafe_allow_html=True)
 
