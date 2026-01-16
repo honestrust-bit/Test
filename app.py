@@ -9,7 +9,7 @@ import datetime
 import re
 
 # ==========================================
-# [Backend] 구글 시트 매니저 (숙련도 시스템 적용)
+# [Backend] 구글 시트 매니저
 # ==========================================
 class GoogleSheetManager:
     def __init__(self):
@@ -24,11 +24,9 @@ class GoogleSheetManager:
             self.client = gspread.authorize(creds)
             self.sheet = self.client.open("memory_game_db")
             
-            # 시트 연결 (없으면 생성)
             try: self.users_ws = self.sheet.worksheet("users")
             except: self.users_ws = self.sheet.add_worksheet("users", 100, 10); self.users_ws.append_row(["user_id", "password", "level", "xp", "title"])
             
-            # [변경] 도감 시트 헤더 확장 (quest_name, count 추가)
             try: self.collections_ws = self.sheet.worksheet("collections")
             except: 
                 self.collections_ws = self.sheet.add_worksheet("collections", 100, 10)
@@ -66,18 +64,15 @@ class GoogleSheetManager:
     def get_quest_list(self):
         return self.quests_ws.get_all_records()
 
-    # [핵심] 카드 보상 처리 (중복 시 레벨업)
     def process_reward(self, user_id, card_text, current_level, current_xp, row_idx, quest_name):
         records = self.collections_ws.get_all_records()
         found_idx = -1
         current_count = 0
         current_grade = "NORMAL"
         
-        # 1. 이미 있는 카드인지 확인
         for i, row in enumerate(records):
-            # 유저ID, 카드내용, 퀘스트명이 모두 같아야 같은 카드로 인정
             if str(row['user_id']) == str(user_id) and row['card_text'] == card_text and row.get('quest_name') == quest_name:
-                found_idx = i + 2 # 헤더 보정
+                found_idx = i + 2 
                 current_count = row.get('count', 1)
                 current_grade = row.get('grade', 'NORMAL')
                 break
@@ -85,23 +80,20 @@ class GoogleSheetManager:
         status = ""
         final_grade = current_grade
         
-        # 2. 기존 카드 승급 로직
         if found_idx != -1:
             new_count = current_count + 1
-            # 숙련도에 따른 등급 승급 (3회: 희귀, 7회: 전설)
             if new_count >= 7: new_grade = "LEGEND"
             elif new_count >= 3: new_grade = "RARE"
             else: new_grade = current_grade
             
-            self.collections_ws.update_cell(found_idx, 6, new_count) # count 업데이트
-            self.collections_ws.update_cell(found_idx, 3, new_grade) # grade 업데이트
-            self.collections_ws.update_cell(found_idx, 4, str(datetime.date.today())) # 날짜 최신화
+            self.collections_ws.update_cell(found_idx, 6, new_count)
+            self.collections_ws.update_cell(found_idx, 3, new_grade)
+            self.collections_ws.update_cell(found_idx, 4, str(datetime.date.today()))
             
             status = "UPGRADE"
             final_grade = new_grade
-            xp_gain = 10 + (new_count * 2) # 반복할수록 소소한 추가 경험치
+            xp_gain = 10 + (new_count * 2) 
             
-        # 3. 신규 카드 획득
         else:
             rand = random.random()
             if rand < 0.05: final_grade = "LEGEND"
@@ -112,7 +104,6 @@ class GoogleSheetManager:
             status = "NEW"
             xp_gain = 50 if final_grade == "LEGEND" else 30 if final_grade == "RARE" else 20
 
-        # 4. 유저 경험치 반영
         new_xp = current_xp + xp_gain
         new_level, req_xp = current_level, current_level * 100
         
@@ -142,10 +133,24 @@ def apply_game_style():
         .user-info-box { background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; border: 2px solid #FFD700; margin-top: 10px; }
         .stProgress > div > div > div > div { background: linear-gradient(to right, #00b09b, #96c93d); }
         .stButton > button { width: 100%; height: 50px; border-radius: 10px; font-family: 'Jua'; font-size: 1.1rem; }
-        .quiz-card { background-color: #fff8dc; border: 4px solid #8b4513; border-radius: 15px; padding: 25px; margin: 10px auto; color: #3d2b07; font-size: 1.2rem; line-height: 1.8; text-align: center; }
-        .blank-space { border-bottom: 3px solid #8b4513; margin: 0 4px; color: #8b4513; font-weight:bold; padding: 0 5px;}
-        .input-label {font-size: 0.9rem; color: #FFD700; margin-bottom: -10px;}
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        
+        /* 카드 스타일 */
+        .quiz-card { background-color: #fff8dc; border: 4px solid #8b4513; border-radius: 15px; padding: 25px; margin: 10px auto; color: #3d2b07; font-size: 1.3rem; line-height: 2.0; text-align: justify; }
+        .blank-space { border-bottom: 3px solid #8b4513; margin: 0 4px; color: #d9534f; font-weight:bold; padding: 0 5px; background: rgba(0,0,0,0.05); border-radius: 5px;}
+        
+        /* Streamlit 기본 컨테이너(카드모양) 커스텀 */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background-color: #fff8dc;
+            border: 4px solid #8b4513;
+            border-radius: 15px;
+            padding: 20px;
+        }
+        /* 카드 안의 텍스트 색상 강제 지정 */
+        div[data-testid="stVerticalBlockBorderWrapper"] p, 
+        div[data-testid="stVerticalBlockBorderWrapper"] div {
+            color: #3d2b07 !important;
+            font-family: 'Jua', sans-serif;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -209,7 +214,6 @@ elif 'page' not in st.session_state or st.session_state.page == 'main':
     u_id, lv, xp = st.session_state.user_id, st.session_state.level, st.session_state.xp
     req_xp = lv * 100
     
-    # 아바타 진화
     if lv < 5: avatar = "📜" 
     elif lv < 10: avatar = "📘"
     elif lv < 20: avatar = "📚"
@@ -239,7 +243,7 @@ elif 'page' not in st.session_state or st.session_state.page == 'main':
     with col2:
         if st.button("📖 도감"): st.session_state.page = 'collection'; st.rerun()
 
-# 화면 3: 퀘스트 던전 (완전 정복 모드)
+# 화면 3: 퀘스트 던전 (순서 정렬 + 카드형 디자인)
 elif st.session_state.page == 'dungeon':
     if st.button("🏠 로비로"): 
         st.session_state.page = 'main'
@@ -254,9 +258,7 @@ elif st.session_state.page == 'dungeon':
         if not quests: st.info("등록된 퀘스트가 없습니다.")
         else:
             q_names = [q['quest_name'] for q in quests]
-            # 세션에 선택한 퀘스트 저장
             if 'selected_quest_name' not in st.session_state: st.session_state.selected_quest_name = "선택 안함"
-            
             selected_q = st.selectbox("진행할 퀘스트:", ["선택 안함"] + q_names, key="q_select_box")
             st.session_state.selected_quest_name = selected_q
 
@@ -283,7 +285,6 @@ elif st.session_state.page == 'dungeon':
 
     # [문제 출제 및 풀이]
     if 'sents' in st.session_state and st.session_state.sents:
-        # 문제 출제 로직
         if 'curr_ans' not in st.session_state:
             curr_sent = st.session_state.sents[st.session_state.q_idx % len(st.session_state.sents)]
             kiwi = load_kiwi()
@@ -299,126 +300,128 @@ elif st.session_state.page == 'dungeon':
             
             if not nouns: st.session_state.q_idx += 1; st.rerun()
             
-            # 난이도 적용
             diff = st.session_state.difficulty
+            unique_nouns = list(set(nouns))
             target_nouns = []
-            if "쉬움" in diff: target_nouns = [random.choice(nouns)] 
-            elif "보통" in diff: k = max(1, int(len(nouns) * 0.3)); target_nouns = random.sample(nouns, k)
-            elif "어려움" in diff: k = max(1, int(len(nouns) * 0.5)); target_nouns = random.sample(nouns, k)
-            else: target_nouns = list(set(nouns))
-
-            # [변경] 빈칸에 번호 매기기 (1) __ (2) __
-            q_html = curr_sent
-            sorted_targets = sorted(list(set(target_nouns)), key=lambda x: curr_sent.find(x)) # 문장 순서대로 정렬
             
-            final_targets = [] # 실제 빈칸으로 뚫린 단어들 (순서대로)
+            if "쉬움" in diff: target_nouns = [random.choice(unique_nouns)]
+            elif "보통" in diff: k = max(1, int(len(unique_nouns) * 0.3)); target_nouns = random.sample(unique_nouns, k)
+            elif "어려움" in diff: k = max(1, int(len(unique_nouns) * 0.5)); target_nouns = random.sample(unique_nouns, k)
+            else: target_nouns = unique_nouns
 
-            for i, n in enumerate(sorted_targets):
-                # 단어가 여러 번 나올 수 있으므로, 아직 안 바뀐 것만 순차적으로 치환
-                if n in q_html:
-                    # 번호표 붙이기
-                    blank_html = f'<span class="blank-space">({i+1}) ________________</span>'
-                    q_html = q_html.replace(n, blank_html, 1) # 한 번에 하나씩만 치환
-                    final_targets.append(n)
+            # [핵심] 순서대로 정렬하기 (re.finditer 사용)
+            # 1. 모든 타겟 단어의 위치(index)를 찾는다.
+            matches = []
+            for t in target_nouns:
+                for m in re.finditer(re.escape(t), curr_sent):
+                    matches.append((m.start(), m.group()))
+            
+            # 2. 위치(index) 순서대로 정렬하고, 중복 위치 제거 (겹치는 단어 방지)
+            matches.sort(key=lambda x: x[0])
+            
+            # 3. 앞에서부터 순서대로 치환 & 정답 리스트 생성
+            # 문자열을 리스트로 변환하여 치환
+            temp_sent_list = list(curr_sent)
+            final_targets = []
+            
+            # 뒤에서부터 치환해야 인덱스가 안 꼬임
+            matches.reverse()
+            
+            processed_indices = set() # 이미 처리된 인덱스 방지
+            
+            blank_counter = len(matches) # 번호 매기기용 (뒤에서부터 하니까 역순)
+            
+            real_targets_ordered = [] # 실제 정답 (앞에서부터)
+
+            for idx, word in matches:
+                if idx in processed_indices: continue
+                
+                # 빈칸 HTML 생성
+                blank_html = f'( {blank_counter} ) ________'
+                
+                # 원본 문자열 치환
+                # 리스트 슬라이싱으로 치환
+                temp_sent_list[idx : idx + len(word)] = list(blank_html)
+                
+                # 정답 리스트에 추가 (나중에 뒤집어야 함)
+                real_targets_ordered.append(word)
+                blank_counter -= 1
+            
+            # 문자열 복원
+            q_html = "".join(temp_sent_list)
+            real_targets_ordered.reverse() # 정답 순서 원상복구
 
             st.session_state.curr_sent = curr_sent
-            st.session_state.curr_targets = final_targets
+            st.session_state.curr_targets = real_targets_ordered
             st.session_state.curr_html = q_html
-            st.session_state.curr_ans = "ACTIVE" # 문제 활성화 플래그
+            st.session_state.curr_ans = "ACTIVE"
 
-        # 1. 문제 표시
-        st.markdown(f"""<div class="quiz-card">{st.session_state.curr_html}</div>""", unsafe_allow_html=True)
-        
-        # 2. 정답 입력창 (빈칸 개수만큼 생성)
-        with st.form("btl", clear_on_submit=False): # 재실행으로 초기화할 것이므로 clear_on_submit은 False
-            st.write("📝 **빈칸 채우기 (모두 맞춰야 성공!)**")
+        # [디자인] 카드 컨테이너 안에 텍스트와 입력을 모두 넣음
+        with st.container(border=True):
+            st.markdown(st.session_state.curr_html)
+            st.write("---") # 구분선
             
-            # 입력값들을 저장할 리스트
-            user_inputs = []
-            
-            # 컬럼으로 나누어 입력창 배치
-            cols = st.columns(min(len(st.session_state.curr_targets), 3)) # 최대 3열
-            
-            for i in range(len(st.session_state.curr_targets)):
-                with cols[i % 3]:
-                    # [핵심] key에 q_idx를 포함시켜서 문제가 바뀌면 입력창도 강제 초기화됨!
-                    val = st.text_input(f"빈칸 ({i+1})", key=f"ans_{st.session_state.q_idx}_{i}")
-                    user_inputs.append(val)
-            
-            sub = st.form_submit_button("🔥 정답 확인")
-            
-            if sub:
-                # [핵심] 모든 정답 체크 로직
-                all_correct = True
-                wrong_indices = []
+            with st.form("btl", clear_on_submit=False):
+                cols = st.columns(min(len(st.session_state.curr_targets), 2)) # 2열 배치
+                user_inputs = []
                 
-                for i, target in enumerate(st.session_state.curr_targets):
-                    # 띄어쓰기 제거하고 비교
-                    if user_inputs[i].strip() != target:
-                        all_correct = False
-                        wrong_indices.append(i+1)
+                for i in range(len(st.session_state.curr_targets)):
+                    with cols[i % 2]:
+                        val = st.text_input(f"빈칸 ({i+1}) 정답", key=f"ans_{st.session_state.q_idx}_{i}")
+                        user_inputs.append(val)
                 
-                if all_correct:
-                    # 보상 지급 (퀘스트 이름도 함께 저장)
-                    g, up, gain, nl, nx, stat, count = gm.process_reward(
-                        st.session_state.user_id, 
-                        st.session_state.curr_sent, 
-                        st.session_state.level, 
-                        st.session_state.xp, 
-                        st.session_state.user_row_idx,
-                        st.session_state.selected_quest_name
-                    )
+                sub = st.form_submit_button("🔥 정답 확인")
+                
+                if sub:
+                    all_correct = True
+                    wrong_indices = []
+                    for i, target in enumerate(st.session_state.curr_targets):
+                        if user_inputs[i].strip() != target:
+                            all_correct = False
+                            wrong_indices.append(i+1)
                     
-                    st.session_state.level = nl
-                    st.session_state.xp = nx
-                    
-                    msg = "✨ 완벽합니다!"
-                    if stat == "UPGRADE": msg = f"🔥 숙련도 상승! (현재 {count}회독)"
-                    if g=="LEGEND": st.balloons(); st.success(f"👑 {msg} 전설 등급! (+{gain})")
-                    else: st.success(f"{msg} (+{gain})")
-                    
-                    time.sleep(1.5)
-                    del st.session_state.curr_ans
-                    st.session_state.q_idx += 1
-                    st.rerun() # 재실행 -> 입력창 초기화됨
-                else:
-                    st.error(f"💥 {wrong_indices}번 빈칸이 틀렸습니다! 다시 도전하세요.")
+                    if all_correct:
+                        g, up, gain, nl, nx, stat, count = gm.process_reward(
+                            st.session_state.user_id, st.session_state.curr_sent, 
+                            st.session_state.level, st.session_state.xp, st.session_state.user_row_idx,
+                            st.session_state.selected_quest_name
+                        )
+                        st.session_state.level = nl
+                        st.session_state.xp = nx
+                        
+                        msg = "✨ 완벽합니다!"
+                        if stat == "UPGRADE": msg = f"🔥 숙련도 UP! ({count}회독)"
+                        if g=="LEGEND": st.balloons(); st.success(f"👑 {msg} 전설! (+{gain})")
+                        else: st.success(f"{msg} (+{gain})")
+                        
+                        time.sleep(1.5); del st.session_state.curr_ans; st.session_state.q_idx += 1; st.rerun()
+                    else:
+                        st.error(f"💥 {wrong_indices}번이 틀렸습니다!")
 
-# 화면 4: 도감 (퀘스트별 필터링 + 숙련도 표시)
+# 화면 4: 도감
 elif st.session_state.page == 'collection':
     if st.button("🏠 로비로"): st.session_state.page = 'main'; st.rerun()
     st.header("📖 지식 도감")
     
     my_cards = gm.get_collections(st.session_state.user_id)
-    
-    if not my_cards:
-        st.info("수집 내역이 없습니다.")
+    if not my_cards: st.info("수집 내역이 없습니다.")
     else:
-        # 1. 퀘스트 목록 추출 (필터용)
         quest_list = sorted(list(set([c.get('quest_name', '기타') for c in my_cards])))
-        filter_q = st.multiselect("📂 퀘스트별로 보기", quest_list, default=quest_list)
-        
-        # 2. 필터링된 카드만 표시
+        filter_q = st.multiselect("📂 퀘스트 필터", quest_list, default=quest_list)
         filtered_cards = [c for c in my_cards if c.get('quest_name', '기타') in filter_q]
         
-        st.caption(f"총 {len(filtered_cards)}개의 카드를 보유중입니다.")
-        
+        st.caption(f"총 {len(filtered_cards)}장 보유")
         for c in filtered_cards:
             g = c.get('grade', 'NORMAL')
-            g_short = g[0]
             cnt = c.get('count', 1)
-            q_name = c.get('quest_name', 'Unknown')
-            
-            # 등급별 테두리 색상
-            border_color = 'gold' if g == 'LEGEND' else 'blue' if g == 'RARE' else '#aaa'
+            color = 'gold' if g == 'LEGEND' else '#87CEEB' if g == 'RARE' else '#aaa'
             
             st.markdown(f"""
-                <div class="quiz-card" style="padding:15px; margin-bottom:15px; border-color:{border_color}; text-align:left;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                        <span style="background:{border_color}; color:white; padding:3px 10px; border-radius:10px; font-size:0.8rem;">{g}</span>
-                        <span style="color:#FFD700; font-weight:bold;">Lv.{cnt} (숙련도)</span>
+                <div style="background:#fff8dc; border:2px solid {color}; border-radius:10px; padding:15px; margin-bottom:10px; color:black;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span style="background:{color}; color:white; padding:2px 8px; border-radius:5px; font-size:0.8rem;">{g}</span>
+                        <span style="font-weight:bold; color:#d9534f;">Lv.{cnt} (숙련도)</span>
                     </div>
-                    <div style="font-size:1.1rem; margin-bottom:10px;">{c['card_text']}</div>
-                    <div style="font-size:0.8rem; color:#aaa; text-align:right;">📂 {q_name} | 📅 {c['collected_at']}</div>
+                    <div style="font-size:1.1rem; line-height:1.6;">{c['card_text']}</div>
                 </div>
             """, unsafe_allow_html=True)
