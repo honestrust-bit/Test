@@ -9,8 +9,9 @@ import datetime
 import re
 
 # ==========================================
-# [Backend] 구글 시트 매니저 (캐싱 적용으로 429 오류 해결!)
+# [Backend] 구글 시트 매니저 (변경 없음)
 # ==========================================
+# (이전과 동일한 백엔드 로직입니다. 안정성을 위해 그대로 유지합니다.)
 class GoogleSheetManager:
     def __init__(self):
         try:
@@ -24,7 +25,6 @@ class GoogleSheetManager:
             self.client = gspread.authorize(creds)
             self.sheet = self.client.open("memory_game_db")
             
-            # 시트 연결 및 자동 복구
             try: self.users_ws = self.sheet.worksheet("users")
             except: self.users_ws = self.sheet.add_worksheet("users", 100, 10)
             if not self.users_ws.row_values(1): self.users_ws.append_row(["user_id", "password", "level", "xp", "title"])
@@ -32,7 +32,6 @@ class GoogleSheetManager:
             try: self.collections_ws = self.sheet.worksheet("collections")
             except: self.collections_ws = self.sheet.add_worksheet("collections", 100, 10)
             
-            # 도감 헤더 체크
             headers = ["user_id", "card_text", "grade", "collected_at", "quest_name", "count"]
             if not self.collections_ws.row_values(1): self.collections_ws.append_row(headers)
 
@@ -71,16 +70,12 @@ class GoogleSheetManager:
         try: records = self.collections_ws.get_all_records()
         except: records = []
         
-        found_idx = -1
-        current_count = 0
-        current_grade = "NORMAL"
-        
+        found_idx = -1; current_count = 0; current_grade = "NORMAL"
         for i, row in enumerate(records):
             if str(row['user_id']) == str(user_id) and row['card_text'] == card_text and row.get('quest_name') == quest_name:
                 found_idx = i + 2; current_count = row.get('count', 1); current_grade = row.get('grade', 'NORMAL'); break
         
         status = ""; final_grade = current_grade
-        
         if found_idx != -1:
             new_count = current_count + 1
             if new_count >= 7: new_grade = "LEGEND"
@@ -111,233 +106,240 @@ class GoogleSheetManager:
         except: return []
 
 # ==========================================
-# [Design] 메이플 스타일 적용 🍁
+# [Design] 닥터 스트레인지 도서관 테마 🧙‍♂️
 # ==========================================
 def apply_game_style():
     st.markdown("""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
+        /* 고풍스럽고 마법적인 폰트 임포트 */
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Spectral:wght@400;600&display=swap');
         
-        html, body, [class*="css"] { font-family: 'Jua', sans-serif; }
+        /* 전체 폰트 설정: 기본은 Spectral(명조 계열), 제목은 Cinzel(장식용) */
+        html, body, [class*="css"] {
+            font-family: 'Spectral', serif;
+            color: #e8dcb5 !important; /* 양피지색 텍스트 */
+        }
+        
+        h1, h2, h3 {
+            font-family: 'Cinzel Decorative', cursive !important;
+            color: #d4af37 !important; /* 황금색 제목 */
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+        }
 
-        /* 배경: 헤네시스 느낌 (하늘 + 언덕) */
+        /* 배경: 신비로운 어둠의 마법 도서관 */
         .stApp {
-            background: linear-gradient(180deg, #87CEEB 0%, #87CEEB 70%, #90EE90 70%, #90EE90 100%);
+            background: linear-gradient(135deg, #0d0d1a 0%, #1a0f2e 50%, #2c1e12 100%);
+            background-attachment: fixed;
         }
 
-        /* 메인 컨테이너 (UI 창 느낌) */
-        .main-container {
-            background-color: rgba(255, 255, 255, 0.9);
-            border: 3px solid #666;
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-
-        /* 카드/퀘스트 보드 (반투명 검정 - 메이플 UI 스타일) */
+        /* 메인 컨테이너 UI (카드/창) - 고대 마법서 느낌 */
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background-color: rgba(0, 0, 0, 0.6) !important;
-            border: 2px solid #ccc !important;
-            border-radius: 10px !important;
-            padding: 20px !important;
+            background-color: rgba(30, 20, 10, 0.85) !important; /* 어두운 가죽/나무 질감 */
+            border: 2px solid #d4af37 !important; /* 황금색 테두리 */
+            border-radius: 8px !important;
+            padding: 25px !important;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.2), inset 0 0 30px rgba(0,0,0,0.5) !important;
+            background-image: url('https://www.transparenttextures.com/patterns/aged-paper.png'); /* 종이 질감 오버레이 */
         }
         
-        /* 텍스트 색상 (어두운 배경이라 흰색으로) */
+        /* 컨테이너 내부 텍스트 색상 강제 지정 */
         div[data-testid="stVerticalBlockBorderWrapper"] p,
         div[data-testid="stVerticalBlockBorderWrapper"] span,
         div[data-testid="stVerticalBlockBorderWrapper"] div {
-            color: #ffffff !important;
-            font-size: 1.1rem;
+            color: #e8dcb5 !important; /* 양피지색 */
         }
 
-        /* 버튼 (입체감 있는 오렌지 버튼) */
+        /* 버튼: 마법 룬 문자판 느낌 */
         .stButton > button {
-            background: linear-gradient(to bottom, #FFA500, #FF8C00);
-            color: white;
-            border: 2px solid #fff;
-            border-radius: 10px;
-            height: 50px;
+            background: linear-gradient(to bottom, #5e4b3c, #3d2b1f);
+            color: #d4af37 !important; /* 황금색 글씨 */
+            border: 2px solid #d4af37;
+            border-radius: 5px;
+            height: 55px;
+            font-family: 'Cinzel Decorative', cursive;
             font-size: 1.2rem;
-            box-shadow: 0 4px 0 #CD6600; /* 입체 그림자 */
-            transition: all 0.1s;
+            text-shadow: 0 0 5px rgba(212, 175, 55, 0.7);
+            box-shadow: 0 4px 0 #2a1a10;
+            transition: all 0.2s;
+        }
+        .stButton > button:hover {
+            background: linear-gradient(to bottom, #7e5b4c, #4d3b2f);
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.8); /* 빛나는 효과 */
         }
         .stButton > button:active {
             transform: translateY(4px);
-            box-shadow: 0 0 0 #CD6600;
+            box-shadow: 0 0 0 #2a1a10;
         }
         
-        /* 입력창 (깔끔한 흰색) */
+        /* 입력창: 오래된 종이에 쓰는 느낌 */
         .stTextInput input {
-            background-color: #fff;
-            color: #333;
-            border-radius: 5px;
-            border: 2px solid #888;
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            color: #e8dcb5 !important;
+            border: 1px solid #d4af37 !important;
+            border-radius: 4px;
+            font-family: 'Spectral', serif;
         }
-        .stTextInput label { color: #fff !important; }
+        .stTextInput label { color: #d4af37 !important; font-family: 'Cinzel Decorative', cursive !important;}
 
-        /* 경험치 바 (노란색/금색) */
+        /* 경험치 바: 마력이 차오르는 느낌 (파란색/보라색) */
         .stProgress > div > div > div > div {
-            background: linear-gradient(to right, #FFD700, #FFA500);
+            background: linear-gradient(to right, #4b0082, #0000ff, #00ffff);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
         }
 
-        /* 빈칸 번호표 */
-        .blank-number {
-            background-color: #FF4500;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 5px;
-            font-weight: bold;
-            margin-right: 5px;
-            font-size: 1rem;
+        /* 아바타 둥둥 효과 (느리고 신비롭게) */
+        @keyframes mysteriousFloat { 
+            0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.3)); } 
+            50% { transform: translateY(-15px); filter: drop-shadow(0 0 20px rgba(0, 255, 255, 0.5)); } 
+        }
+        .avatar-emoji { 
+            font-size: 110px; 
+            animation: mysteriousFloat 4s ease-in-out infinite; 
+        }
+        .user-info-box { 
+            background: rgba(0,0,0,0.6); 
+            padding: 8px 20px; 
+            border: 2px solid #d4af37; 
+            border-radius: 4px;
+            color: #d4af37;
+            font-family: 'Cinzel Decorative', cursive;
         }
         
-        /* 아바타 둥둥 */
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .avatar-emoji { font-size: 100px; animation: float 2.5s ease-in-out infinite; filter: drop-shadow(0 5px 10px rgba(0,0,0,0.3)); }
+        /* 탭 스타일 */
+        .stTabs [data-baseweb="tab"] {
+            color: #e8dcb5;
+        }
+        .stTabs [aria-selected="true"] {
+            color: #d4af37 !important;
+            font-weight: bold;
+        }
         </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# [Logic] 캐싱된 매니저 로드 (429 에러 방지)
+# [Logic] 앱 실행
 # ==========================================
-st.set_page_config(page_title="메모리 가디언즈", page_icon="🍁", layout="centered")
+st.set_page_config(page_title="Sanctum of Knowledge", page_icon="🧙‍♂️", layout="centered")
 apply_game_style()
 
 @st.cache_resource
-def load_resources():
-    return Kiwi(), GoogleSheetManager()
-
+def load_resources(): return Kiwi(), GoogleSheetManager()
 kiwi, gm = load_resources()
 cookie_manager = stx.CookieManager()
 
-# 세션 초기화
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = None
-    st.session_state.difficulty = "쉬움 (빈칸 1개)"
+if 'user_id' not in st.session_state: st.session_state.user_id = None; st.session_state.difficulty = "쉬움 (빈칸 1개)"
 
 time.sleep(0.1)
 cookie_id = cookie_manager.get("my_game_id")
 if st.session_state.user_id is None and cookie_id:
-    # 빠른 로그인을 위해 검증 생략하고 ID만 세팅 (실제 서비스라면 토큰 검증 필요)
     try:
         records = gm.users_ws.get_all_records()
         for i, row in enumerate(records):
             if str(row['user_id']) == str(cookie_id):
-                st.session_state.user_id = row['user_id']
-                st.session_state.user_row_idx = i + 2
-                st.session_state.level = row['level']
-                st.session_state.xp = row['xp']
-                st.toast(f"🍁 접속 성공: {cookie_id}", icon="✅"); break
+                st.session_state.user_id = row['user_id']; st.session_state.user_row_idx = i + 2
+                st.session_state.level = row['level']; st.session_state.xp = row['xp']
+                st.toast(f"마법사 {cookie_id}님, 귀환을 환영합니다.", icon="🧙‍♂️"); break
     except: pass
 
 # 화면 1: 로그인
 if st.session_state.user_id is None:
-    st.title("🍁 메모리 가디언즈")
-    st.markdown("<div style='text-align:center; color:#333;'>나만의 지식을 키우는 모험을 시작하세요!</div>", unsafe_allow_html=True)
+    st.title("🧙‍♂️ Sanctum of Knowledge")
+    st.markdown("<div style='text-align:center; color:#d4af37; font-style:italic;'>고대 지식의 수호자가 되기 위한 여정</div>", unsafe_allow_html=True)
     st.write("")
-    
-    tab1, tab2 = st.tabs(["로그인", "모험가 등록"])
+    tab1, tab2 = st.tabs(["서고 입장", "수호자 등록"])
     with tab1:
-        lid = st.text_input("아이디")
-        lpw = st.text_input("비밀번호", type="password")
-        remember_me = st.checkbox("로그인 유지")
-        if st.button("게임 시작", type="primary"):
+        lid = st.text_input("마법사명 (ID)")
+        lpw = st.text_input("봉인 주문 (PW)", type="password")
+        remember_me = st.checkbox("마력 유지 (자동 로그인)")
+        if st.button("입장하기", type="primary"):
             user_data, row_idx = gm.login(lid, lpw)
             if user_data:
-                st.session_state.user_id = lid
-                st.session_state.user_row_idx = row_idx
-                st.session_state.level = user_data['level']
-                st.session_state.xp = user_data['xp']
+                st.session_state.user_id = lid; st.session_state.user_row_idx = row_idx
+                st.session_state.level = user_data['level']; st.session_state.xp = user_data['xp']
                 if remember_me: cookie_manager.set("my_game_id", lid, expires_at=datetime.datetime.now() + datetime.timedelta(days=7))
                 st.rerun()
-            else: st.error("아이디 또는 비밀번호를 확인해주세요.")
+            else: st.error("존재하지 않는 마법사이거나 주문이 틀렸습니다.")
     with tab2:
-        rid = st.text_input("새 아이디")
-        rpw = st.text_input("새 비밀번호", type="password")
+        rid = st.text_input("새로운 마법사명")
+        rpw = st.text_input("새로운 봉인 주문", type="password")
         if st.button("등록하기"):
-            if gm.register(rid, rpw): st.success("환영합니다! 로그인을 진행해주세요."); time.sleep(1); st.rerun()
-            else: st.error("이미 사용 중인 아이디입니다.")
+            if gm.register(rid, rpw): st.success("등록되었습니다. 입장을 진행해주세요."); time.sleep(1); st.rerun()
+            else: st.error("이미 존재하는 마법사명입니다.")
 
 # 화면 2: 로비
 elif 'page' not in st.session_state or st.session_state.page == 'main':
     u_id, lv, xp = st.session_state.user_id, st.session_state.level, st.session_state.xp
     req_xp = lv * 100
     
-    # 아바타 (메이플 느낌 몬스터)
-    if lv < 5: avatar = "🍄"      # 주황버섯 느낌
-    elif lv < 10: avatar = "🐷"    # 리본돼지 느낌
-    elif lv < 20: avatar = "👻"    # 레이스 느낌
-    else: avatar = "🐉"           # 혼테일/자쿰 느낌
+    # 아바타 진화 (마법 아이템/존재)
+    if lv < 5: avatar = "📜"      # 고대 주문서
+    elif lv < 10: avatar = "🧿"    # 아가모토의 눈(느낌)
+    elif lv < 20: avatar = "🔮"    # 예언의 수정구
+    else: avatar = "🧙‍♂️"           # 소서러 슈프림
     
     col_top1, col_top2 = st.columns([3, 1])
     with col_top1:
-        diff = st.select_slider("🔥 사냥터 난이도", options=["쉬움 (빈칸 1개)", "보통 (30%)", "어려움 (50%)", "지옥 (전부)"])
+        diff = st.select_slider("🔥 마법 수행 난이도", options=["쉬움 (빈칸 1개)", "보통 (30%)", "어려움 (50%)", "지옥 (전부)"])
         st.session_state.difficulty = diff
     with col_top2:
         if st.button("로그아웃"):
-            cookie_manager.delete("my_game_id")
-            st.session_state.user_id = None
-            st.rerun()
+            cookie_manager.delete("my_game_id"); st.session_state.user_id = None; st.rerun()
             
     st.markdown(f"""
         <div class="main-avatar-container">
             <div class="avatar-emoji">{avatar}</div>
-            <div style="background:rgba(0,0,0,0.7); color:white; padding:5px 15px; border-radius:15px; margin-top:10px;">
-                Lv.{lv} <b>{u_id}</b>
-            </div>
+            <div class="user-info-box">Lv.{lv} {u_id}</div>
         </div>
     """, unsafe_allow_html=True)
     
-    # 경험치 바 (EXP)
-    st.write(f"**EXP** ({xp} / {req_xp})")
+    st.write(f"**마력(EXP)** ({xp} / {req_xp})")
     st.progress(min(xp / req_xp, 1.0))
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("⚔️ 퀘스트 사냥"): st.session_state.page = 'dungeon'; st.rerun()
+        if st.button("⚔️ 금지된 서고 탐색"): st.session_state.page = 'dungeon'; st.rerun()
     with col2:
-        if st.button("📖 몬스터 도감"): st.session_state.page = 'collection'; st.rerun()
+        if st.button("📖 아카식 레코드"): st.session_state.page = 'collection'; st.rerun()
 
-# 화면 3: 퀘스트 (인터리브 방식 - 모바일 최적화)
+# 화면 3: 퀘스트 (인터리브 방식 유지)
 elif st.session_state.page == 'dungeon':
-    if st.button("🏠 마을로 귀환"): 
+    if st.button("🏠 중앙 홀로 귀환"): 
         st.session_state.page = 'main'
         if 'curr_ans' in st.session_state: del st.session_state.curr_ans
         st.rerun()
         
-    st.header("📜 퀘스트 게시판")
-    tab_list, tab_upload = st.tabs(["퀘스트 받기", "퀘스트 만들기"])
+    st.header("📜 금지된 지식의 서")
+    tab_list, tab_upload = st.tabs(["주문서 선택", "새 주문서 기록"])
     
     with tab_list:
         quests = gm.get_quest_list()
-        if not quests: st.info("수행할 퀘스트가 없습니다.")
+        if not quests: st.info("해독할 주문서가 없습니다.")
         else:
             q_names = [q['quest_name'] for q in quests]
             if 'selected_quest_name' not in st.session_state: st.session_state.selected_quest_name = "선택 안함"
-            selected_q = st.selectbox("진행할 퀘스트:", ["선택 안함"] + q_names)
+            selected_q = st.selectbox("해독할 주문서:", ["선택 안함"] + q_names)
             st.session_state.selected_quest_name = selected_q
 
             if selected_q != "선택 안함":
                 q_content = next(item['content'] for item in quests if item['quest_name'] == selected_q)
-                if st.button(f"⚔️ '{selected_q}' 사냥 시작"):
+                if st.button(f"✨ '{selected_q}' 해독 시작"):
                     st.session_state.sents = [s.text for s in kiwi.split_into_sents(q_content) if len(s.text)>5]
                     st.session_state.q_idx = 0
                     if 'curr_ans' in st.session_state: del st.session_state.curr_ans
                     st.rerun()
 
     with tab_upload:
-        new_q_name = st.text_input("퀘스트 이름")
-        uploaded = st.file_uploader("자료 업로드 (.txt)", type=['txt'])
-        if st.button("저장하기"):
+        new_q_name = st.text_input("주문서 이름")
+        uploaded = st.file_uploader("기록 업로드 (.txt)", type=['txt'])
+        if st.button("기록하기"):
             if new_q_name and uploaded:
                 txt_content = uploaded.getvalue().decode('utf-8')
                 if gm.save_quest(new_q_name, txt_content, st.session_state.user_id):
-                    st.success("퀘스트 등록 완료!"); time.sleep(1); st.rerun()
+                    st.success("주문서가 서고에 기록되었습니다."); time.sleep(1); st.rerun()
                 else: st.error("이미 존재하는 이름입니다.")
 
     st.divider()
 
-    # 문제 출제
     if 'sents' in st.session_state and st.session_state.sents:
         if 'curr_ans' not in st.session_state:
             curr_sent = st.session_state.sents[st.session_state.q_idx % len(st.session_state.sents)]
@@ -360,34 +362,28 @@ elif st.session_state.page == 'dungeon':
                 for m in re.finditer(re.escape(t), curr_sent): matches.append((m.start(), m.group()))
             matches.sort(key=lambda x: x[0])
             
-            st.session_state.curr_sent = curr_sent
-            st.session_state.curr_matches = matches
-            st.session_state.curr_targets = [m[1] for m in matches]
-            st.session_state.curr_ans = "ACTIVE"
+            st.session_state.curr_sent = curr_sent; st.session_state.curr_matches = matches
+            st.session_state.curr_targets = [m[1] for m in matches]; st.session_state.curr_ans = "ACTIVE"
 
-        # [카드형 컨테이너] (검은색 반투명)
+        # [고대 마법서 디자인 컨테이너]
         with st.container(border=True): 
             with st.form("btl", clear_on_submit=False):
-                # 인터리브 방식: 텍스트 -> 입력 -> 텍스트
-                user_inputs = []
-                last_idx = 0
-                full_text = st.session_state.curr_sent
+                user_inputs = []; last_idx = 0; full_text = st.session_state.curr_sent
                 
                 for i, (start, word) in enumerate(st.session_state.curr_matches):
                     pre_text = full_text[last_idx:start]
-                    if pre_text: st.write(pre_text) # 앞부분 텍스트
+                    if pre_text: st.write(pre_text)
                     
-                    # 입력창 (빈칸 바로 아래)
                     col_blank, col_rest = st.columns([1, 0.1])
                     with col_blank:
-                        val = st.text_input(f"빈칸 ({i+1}) 정답", key=f"ans_{st.session_state.q_idx}_{i}", placeholder="여기에 정답 입력")
+                        val = st.text_input(f"룬 문자 ({i+1}) 입력", key=f"ans_{st.session_state.q_idx}_{i}")
                     user_inputs.append(val)
                     last_idx = start + len(word)
                 
-                if last_idx < len(full_text): st.write(full_text[last_idx:]) # 남은 텍스트
+                if last_idx < len(full_text): st.write(full_text[last_idx:])
                 
                 st.write("")
-                if st.form_submit_button("🔥 공격하기"):
+                if st.form_submit_button("✨ 주문 시전"):
                     all_correct = True; wrong_indices = []
                     for i, target in enumerate(st.session_state.curr_targets):
                         if user_inputs[i].strip() != target: all_correct = False; wrong_indices.append(i+1)
@@ -399,46 +395,44 @@ elif st.session_state.page == 'dungeon':
                             st.session_state.selected_quest_name
                         )
                         st.session_state.level = nl; st.session_state.xp = nx
-                        
-                        msg = "Critical Hit! ✨"
-                        if stat == "UPGRADE": msg = f"Skill Up! 🔥 ({cnt}회독)"
-                        if g=="LEGEND": st.balloons(); st.success(f"👑 {msg} 전설 등급! (+{gain} EXP)")
-                        else: st.success(f"{msg} (+{gain} EXP)")
-                        
+                        msg = "주문 해독 성공!"
+                        if stat == "UPGRADE": msg = f"마법 숙련도 증가! ({cnt}회독)"
+                        if g=="LEGEND": st.balloons(); st.success(f"👑 {msg} 전설적인 지식! (+{gain} 마력)")
+                        else: st.success(f"{msg} (+{gain} 마력)")
                         time.sleep(1.5); del st.session_state.curr_ans; st.session_state.q_idx += 1; st.rerun()
-                    else: st.error(f"Miss! 💥 {wrong_indices}번이 틀렸습니다.")
+                    else: st.error(f"주문 실패! 💥 {wrong_indices}번 룬이 잘못되었습니다.")
 
 # 화면 4: 도감
 elif st.session_state.page == 'collection':
-    if st.button("🏠 마을로 귀환"): st.session_state.page = 'main'; st.rerun()
-    st.header("📖 몬스터 도감")
+    if st.button("🏠 중앙 홀로 귀환"): st.session_state.page = 'main'; st.rerun()
+    st.header("📖 아카식 레코드 (도감)")
     
     my_cards = gm.get_collections(st.session_state.user_id)
-    if not my_cards: st.info("아직 사냥한 몬스터가 없습니다.")
+    if not my_cards: st.info("기록된 지식이 없습니다.")
     else:
         quest_list = sorted(list(set([c.get('quest_name', '기타') for c in my_cards])))
-        filter_q = st.multiselect("📂 던전 필터", quest_list, default=quest_list)
+        filter_q = st.multiselect("📂 서고 필터", quest_list, default=quest_list)
         filtered_cards = [c for c in my_cards if c.get('quest_name', '기타') in filter_q]
         
-        st.caption(f"총 {len(filtered_cards)} 마리 수집")
+        st.caption(f"총 {len(filtered_cards)} 개의 지식이 기록됨")
         
         for c in filtered_cards:
             g = c.get('grade', 'NORMAL')
             cnt = c.get('count', 1)
             q_name = c.get('quest_name', 'Unknown')
             
-            # 메이플 아이템 등급 색상
-            if g == 'LEGEND': border_col = '#32CD32'; bg_col = 'rgba(50, 205, 50, 0.1)' # 유니크(초록)
-            elif g == 'RARE': border_col = '#00BFFF'; bg_col = 'rgba(0, 191, 255, 0.1)' # 레어(파랑)
-            else: border_col = '#A9A9A9'; bg_col = 'rgba(169, 169, 169, 0.1)' # 노멀
+            # 등급별 마법 테두리 색상
+            if g == 'LEGEND': border_col = '#FFD700'; bg_col = 'rgba(255, 215, 0, 0.15)' # 골드
+            elif g == 'RARE': border_col = '#00FFFF'; bg_col = 'rgba(0, 255, 255, 0.15)' # 시안(마법)
+            else: border_col = '#cd7f32'; bg_col = 'rgba(205, 127, 50, 0.15)' # 브론즈(고대)
             
             st.markdown(f"""
-                <div style="background:{bg_col}; border:2px solid {border_col}; border-radius:10px; padding:15px; margin-bottom:10px; color:white;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span style="background:{border_col}; color:white; padding:2px 8px; border-radius:5px; font-weight:bold;">{g}</span>
-                        <span style="font-weight:bold; color:#FFD700;">Lv.{cnt}</span>
+                <div style="background:{bg_col}; border:2px solid {border_col}; border-radius:8px; padding:15px; margin-bottom:15px; box-shadow: 0 0 10px {border_col};">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-family:'Cinzel Decorative', cursive;">
+                        <span style="color:{border_col}; font-weight:bold;">{g} 등급</span>
+                        <span style="color:#d4af37;">Lv.{cnt} 숙련</span>
                     </div>
-                    <div style="font-size:1.1rem; line-height:1.6; margin-bottom:5px; color:#fff;">{c['card_text']}</div>
-                    <div style="font-size:0.8rem; color:#ccc; text-align:right;">📂 {q_name}</div>
+                    <div style="font-size:1.1rem; line-height:1.6; margin-bottom:5px; color:#e8dcb5;">{c['card_text']}</div>
+                    <div style="font-size:0.8rem; color:#aaa; text-align:right; font-style:italic;">출처: {q_name}</div>
                 </div>
             """, unsafe_allow_html=True)
